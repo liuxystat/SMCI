@@ -1,4 +1,4 @@
-EM.Ite_sp<-function(sdata,r,n.int,order,max.iter,cov.rate,rescale,best_k=NULL,m_order=3,knotx,fam0=gaussian){
+EM.Ite_sp<-function(sdata,r,n.int,order,max.iter,cov.rate,rescale,best_k=4,degree=2,fam0=gaussian){
   Xp <- sdata$Xp
   Zp <- sdata$Zp
   P <- ncol(Zp)
@@ -22,43 +22,28 @@ EM.Ite_sp<-function(sdata,r,n.int,order,max.iter,cov.rate,rescale,best_k=NULL,m_
   ti <- c(sdata$Li[sdata$d1 == 0], sdata$Ri[sdata$d3 == 0])
   ti.max <- max(ti) + 1e-05
   ti.min <- min(ti) - 1e-05
-  #knots <- seq(ti.min, ti.max, length.out = (n.int + 2))
   knots <-quantile(ti,seq(0,1,length.out = (n.int + 2)))
   
   bl.Li<-bl.Ri<-matrix(0,nrow=L,ncol=N)
   bl.Li[,sdata$d1==0]<-Ispline(sdata$Li[sdata$d1==0],order=order,knots=knots)
   bl.Ri[,sdata$d3==0]<-Ispline(sdata$Ri[sdata$d3==0],order=order,knots=knots)
   
-  
+  best_kk <- best_k
   dif<-numeric()
   est.par<-matrix(ncol=M+P+L,nrow=max.iter)
   ll<-numeric()
   dd<-1
   
+  outboundary<-0
   ii<-0
-  #h <- 0.5
   while(dd>cov.rate & ii<max.iter){
     ii<-ii+1
     
     index <- Xp%*%g0
     windex <-data.frame(w=w,index=index)
-    bic_df <- function(data){
-      bic_values <- vector()
-      for (k in 3:15) {
-        model<-lm(w~bs(index,df=k),data = data)
-        bic_values[k-2] <- BIC(model)
-      }
-      best_k <- which.min(bic_values)+2
-      return(best_k)
-    }
+    B=w
+    pxi <- glm(w~bs(index,df = best_k,degree = degree),data = windex,family = binomial)$fitted.values
     
-    if(is.null(best_k)){
-      best_k <- bic_df(data=windex)
-    }else{best_k <- best_k}
-    pxi <- lm(w~bs(index,df=best_k),data = windex)$fitted.values
-    Floor<-.Machine$double.eps
-    pxi[which(pxi<Floor)] <- Floor
-    pxi[which(pxi>(1-Floor))] <- 1-Floor
     
     ezb<-exp(Zp%*%b0)
     Lambda.Li<-t(bl.Li)%*%matrix(e0,ncol=1)
@@ -103,16 +88,17 @@ EM.Ite_sp<-function(sdata,r,n.int,order,max.iter,cov.rate,rescale,best_k=NULL,m_
     # M-step
     
     # Incidence
+    w=Eui
     l_I <- function(zeta0, opt=TRUE) {
       theta <- c(CSI,zeta0) 
       if (rescale==TRUE) {
         theta <- theta/sqrt(sum(theta^2)) 
       }
       a <- Xp%*%theta 
-      b <- lm(Eui~bs(a,df=best_k))
+      
+      b <- glm(Eui~bs(a,df=best_k,degree = degree),family = binomial)
       pxi<-b$fitted.values
-      pxi[which(pxi<Floor)] <- Floor
-      pxi[which(pxi>(1-Floor))] <- 1-Floor
+      
       Q1 <- sum(Eui*log(pxi)+(1-Eui)*log(1-pxi))
       if(opt){
         return(-Q1)
@@ -121,24 +107,18 @@ EM.Ite_sp<-function(sdata,r,n.int,order,max.iter,cov.rate,rescale,best_k=NULL,m_
       }
       
     }
-    
     starting<-g0[-1]/abs(g0[1])
-    
-    fit1 <- nlm(l_I,p=starting)
-    
+    fit1 <- optim(starting,l_I,method='BFGS',control=list(fnscale=1))
     
     #Latency
     if(r>0) fit2<-nlm(bb.eta,p=b0,r=r,sdata=sdata,Zp=Zp,Eyil=Eyil,Ewil=Ewil,Efi=Efi,Euifi=Euifi,bl.Li=bl.Li,bl.Ri=bl.Ri)
     if(r==0) fit2<-nlm(bb.eta0,p=b0,sdata=sdata,Zp=Zp,Eyil=Eyil,Ewil=Ewil,Eui=Eui,bl.Li=bl.Li,bl.Ri=bl.Ri)
     
     if(!is.character(fit1) & !is.character(fit2)){
-      g0 <- l_I(fit1$estimate,opt = FALSE)$theta
-      pxi <- l_I(fit1$estimate,opt = FALSE)$pxi
-      
-      
-      L1<--fit1$minimum
+      g0 <- l_I(fit1$par,opt = FALSE)$theta
+      pxi <- l_I(fit1$par,opt = FALSE)$pxi
+      L1<--fit1$value
       b0<-fit2$estimate
-      #b0<-fit2$par
       if(r==0) e0<-ee.beta0(bb=b0,sdata=sdata,Zp=Zp,Eyil=Eyil,Ewil=Ewil,Eui=Eui,bl.Li=bl.Li,bl.Ri=bl.Ri)
       if(r>0) e0<-ee.beta(bb=b0,r=r,sdata=sdata,Zp=Zp,Eyil=Eyil,Ewil=Ewil,Efi=Efi,Euifi=Euifi,bl.Li=bl.Li,bl.Ri=bl.Ri)
       est.par[ii,]<-c(g0,b0,e0)
@@ -153,7 +133,7 @@ EM.Ite_sp<-function(sdata,r,n.int,order,max.iter,cov.rate,rescale,best_k=NULL,m_
   AIC<-2*(L+P+M)+2*loglik_f
   
   index <- Xp%*%g0
+  incidence <- glm(Eui~bs(index,df=best_k,degree = degree),family = binomial)
   
-  incidence <- lm(Eui~bs(index,df=best_k))
-  return(list(Gamma=g0,Beta=b0,Eta=e0,pre_pxi=pxi,Eui=Eui,AIC=AIC,loglik_f=-loglik_f,r=r,n.int=n.int,order=order,knots=knots,best_k=best_k,sdata=sdata,Xp=Xp,Xp=Xp,bl.Li=bl.Li,bl.Ri=bl.Ri,best_k=best_k,incidence=incidence,convergence=convergence,max.iter=max.iter))
+  return(list(Gamma=g0,Beta=b0,Eta=e0,pre_pxi=pxi,Eui=Eui,AIC=AIC,loglik_f=-loglik_f,r=r,n.int=n.int,order=order,degree=degree,knots=knots,best_k=best_k,sdata=sdata,Xp=Xp,Xp=Xp,bl.Li=bl.Li,bl.Ri=bl.Ri,best_k=best_k,incidence=incidence,convergence=convergence,max.iter=max.iter,Iter=ii,outboundary=outboundary))
 }

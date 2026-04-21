@@ -1,5 +1,5 @@
 SMCI.S <-function(survfun=formula(data),curefun=formula(data),data=parent.frame(),
-                  r=0,n.int=5,order=3,best_k=NULL,max.iter=1000,cov.rate=.001,rescale=FALSE){
+                  r=0,n.int=5,order=3,degree=2,best_k=4,max.iter=1000,cov.rate=.001,rescale=FALSE){
   call <- match.call()
   temp <- c("", "formula", "data", "na.action")
   avars<-all.vars(survfun)
@@ -28,7 +28,7 @@ SMCI.S <-function(survfun=formula(data),curefun=formula(data),data=parent.frame(
   sdata$Xp <- Xp
   sdata$Zp <- Zp
   # Estimates
-  temp.est<-EM.Ite_sp(sdata=sdata,r=r,n.int=n.int,order=order,best_k=best_k,max.iter=max.iter,cov.rate=cov.rate,rescale=rescale)
+  temp.est<-EM.Ite_sp(sdata=sdata,r=r,n.int=n.int,degree=degree,order=order,best_k=best_k,max.iter=max.iter,cov.rate=cov.rate,rescale=rescale)
   output<-list(survfun=survfun1,curefun=curefun,ParEst=temp.est,call=match.call())
   class(output)<-"SISMC"
   output$mdata<-sdata

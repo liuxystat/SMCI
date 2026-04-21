@@ -39,10 +39,11 @@ predict.SMCI <-function(object, method=FALSE,...){
     pre_inci<-pxi[n1:n2]
   }
   if(method=='splines'){
-    pre_inci<-predict(object$ParEst$incidence,newdata=data.frame(index=tu))
-    Floor<-.Machine$double.eps
-    pre_inci[which(pre_inci<Floor)] <- Floor
-    pre_inci[which(pre_inci>(1-Floor))] <- 1-Floor
+    new_bs <- bs(tu, df = object$ParEst$best_k,degree = object$ParEst$degree)  
+    new_X <- cbind(1, new_bs) 
+    coefs <- coef(object$ParEst$incidence)
+    linear_pred <- new_X %*% coefs
+    pre_inci <- 1 / (1 + exp(-linear_pred))
   }
   
   ezb<-exp(sum(object$ParEst$Beta*new.z))
